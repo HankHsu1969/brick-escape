@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2a1a6e">
+<title>積木大逃脫 Brick Escape</title>
+<link rel="icon" href="assets/img/ic_star.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=14">
+</head>
+<body>
+<div id="app">
+
+  <!-- Title -->
+  <section id="scr-title" class="screen active">
+    <div class="title-cover"><img src="assets/img/cover.jpg" alt="積木大逃脫 Brick Escape"></div>
+    <div class="title-actions">
+      <button id="btn-start" class="btn btn-big btn-yellow">開始遊戲</button>
+      <p id="title-progress" class="title-progress"></p>
+      <div class="title-toggles">
+        <button class="btn btn-round toggle" data-toggle="music" aria-label="音樂"><span class="ico">♫</span><span class="lbl">音樂</span></button>
+        <button class="btn btn-round toggle" data-toggle="sfx" aria-label="音效"><span class="ico">🔊</span><span class="lbl">音效</span></button>
+        <button class="btn btn-round" id="btn-howto" aria-label="玩法"><span class="ico">?</span><span class="lbl">玩法</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Level select -->
+  <section id="scr-levels" class="screen">
+    <header class="bar">
+      <button class="btn btn-icon" id="btn-levels-back" aria-label="返回">‹</button>
+      <h2 id="levels-title">選擇關卡</h2>
+      <div class="pill coins"><img src="assets/img/ic_coin.png" alt=""><span class="coin-val">0</span></div>
+    </header>
+    <div id="level-list" class="level-list"></div>
+  </section>
+
+  <!-- Game -->
+  <section id="scr-game" class="screen">
+    <header class="hud">
+      <div class="hud-row">
+        <div class="pill coins"><img src="assets/img/ic_coin.png" alt=""><span class="coin-val">0</span></div>
+        <div class="pill lvl">第 <b id="hud-level">1</b> 關</div>
+      </div>
+      <div class="hud-row">
+        <button class="btn btn-icon btn-red" id="btn-restart" aria-label="重新開始">↻</button>
+        <div class="timer-wrap">
+          <div class="timer" id="hud-timer"><span class="clock">⏱</span><span id="hud-time">00:00</span></div>
+          <div class="hard-tag hidden" id="hud-hard">超級困難</div>
+        </div>
+        <button class="btn btn-icon btn-blue" id="btn-pause" aria-label="暫停">❚❚</button>
+      </div>
+    </header>
+    <div id="board-wrap">
+      <canvas id="board"></canvas>
+      <div id="hand" class="hand hidden">👆</div>
+      <div id="target-hint" class="target-hint hidden"></div>
+    </div>
+    <footer class="boosters">
+      <button class="booster" data-b="freeze"><img src="assets/img/ic_freeze.png" alt="凍結時間"><span class="b-name">凍結</span><span class="b-badge"></span></button>
+      <button class="booster" data-b="hammer"><img src="assets/img/ic_hammer.png" alt="鐵鎚"><span class="b-name">鐵鎚</span><span class="b-badge"></span></button>
+      <button class="booster" data-b="rocket"><img src="assets/img/ic_rocket.png" alt="火箭"><span class="b-name">火箭</span><span class="b-badge"></span></button>
+      <button class="booster" data-b="ufo"><img src="assets/img/ic_ufo.png" alt="飛碟"><span class="b-name">飛碟</span><span class="b-badge"></span></button>
+    </footer>
+  </section>
+
+  <!-- Modal -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="card">
+      <div class="card-ribbon" id="modal-title"></div>
+      <div class="card-body" id="modal-body"></div>
+      <div class="card-actions" id="modal-actions"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="fly-layer"></div>
+</div>
+
+<script src="js/engine.js?v=14"></script>
+<script src="js/levels.js?v=14"></script>
+<script src="js/audio.js?v=14"></script>
+<script src="js/game.js?v=14"></script>
+</body>
+</html>

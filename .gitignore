@@ -1,0 +1,11 @@
+# original 2K Higgsfield / ElevenLabs downloads (the game uses the processed copies in assets/img and assets/sfx)
+assets/raw/
+
+# build / tool output (regenerate with tools/build-artifact.js and `node tools/solve.js --json`)
+dist/
+tools/solutions.json
+tools/gen_out/_log.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
