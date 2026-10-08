@@ -5,7 +5,6 @@
   const $$ = s => Array.from(document.querySelectorAll(s));
   const EPS = 1e-4;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const isInt = v => Math.abs(v - Math.round(v)) < EPS;
   const easeOut = t => 1 - Math.pow(1 - t, 3);
   const easeIn = t => t * t;
 
@@ -685,68 +684,97 @@
     return true;
   }
 
-  // Move one axis toward delta, never skipping over a grid line; false if blocked.
-  function tryStep(axis, delta) {
-    if (Math.abs(delta) < EPS) return false;
-    const cur = axis === 'x' ? drag.fx : drag.fy;
-    let next = cur + Math.sign(delta) * Math.min(Math.abs(delta), 0.2);
-    const up = Math.ceil(cur - EPS), dn = Math.floor(cur + EPS);
-    if (delta > 0 && up > cur + EPS && next > up) next = up;
-    if (delta < 0 && dn < cur - EPS && next < dn) next = dn;
-    const nx = axis === 'x' ? next : drag.fx, ny = axis === 'y' ? next : drag.fy;
-    if (!canPlaceFloat(drag.i, nx, ny)) return false;
-    if (axis === 'x') drag.fx = isInt(next) ? Math.round(next) : next; else drag.fy = isInt(next) ? Math.round(next) : next;
+  /* Free drag: while held, the brick follows the pointer at any sub-cell position, as long as every
+   * cell it overlaps is free. It is snapped to the grid only on release. */
+  const DRAG_STEP = 0.18; // max distance per collision test, well under a cell so nothing tunnels
+
+  function place(x, y) {
+    if (!canPlaceFloat(drag.i, x, y)) return false;
+    drag.fx = x; drag.fy = y;
     return true;
   }
 
-  function dragTo(tx, ty) {
-    const L = G.L, b = L.blocks[drag.i];
-    tx = clamp(tx, -0.6, L.W - b.w + 0.6);
-    ty = clamp(ty, -0.6, L.H - b.h + 0.6);
-    for (let guard = 0; guard < 300 && drag; guard++) {
-      let dx = tx - drag.fx, dy = ty - drag.fy;
-      if (b.dir === 'h') dy = 0;
-      if (b.dir === 'v') dx = 0;
-      if (Math.abs(dx) < 0.02 && Math.abs(dy) < 0.02) break;
-      const ax = isInt(drag.fx), ay = isInt(drag.fy);
-      let moved = false;
-      if (ax && ay) {
-        const order = Math.abs(dx) >= Math.abs(dy) ? ['x', 'y'] : ['y', 'x'];
-        for (const axis of order) { if (tryStep(axis, axis === 'x' ? dx : dy)) { moved = true; break; } }
-      } else if (!ay) {
-        // mid-cell vertically: finish the cell first if the finger wants to go sideways
-        const goal = Math.abs(dx) > Math.abs(dy) + 0.15 ? Math.round(drag.fy) : ty;
-        moved = tryStep('y', goal - drag.fy) || tryStep('y', Math.round(drag.fy) - drag.fy);
-      } else {
-        const goal = Math.abs(dy) > Math.abs(dx) + 0.15 ? Math.round(drag.fx) : tx;
-        moved = tryStep('x', goal - drag.fx) || tryStep('x', Math.round(drag.fx) - drag.fx);
-      }
-      if (!moved) break;
-      if (drag.fx !== drag.sx || drag.fy !== drag.sy) drag.moved = true;
-      if (isInt(drag.fx) && isInt(drag.fy) && tryDragExit()) return;
-    }
-    if (drag && isInt(drag.fx) && isInt(drag.fy) && (Math.abs(tx - drag.fx) > 0.3 || Math.abs(ty - drag.fy) > 0.3)) tryDragExit();
+  // Move along one axis toward cur+delta; if blocked, stop flush against the obstacle.
+  function slide(axis, delta) {
+    if (Math.abs(delta) < EPS) return false;
+    const cur = axis === 'x' ? drag.fx : drag.fy;
+    const to = v => (axis === 'x' ? place(v, drag.fy) : place(drag.fx, v));
+    if (to(cur + delta)) return true;
+    const edge = delta > 0 ? Math.ceil(cur - EPS) : Math.floor(cur + EPS);
+    return Math.abs(edge - cur) > EPS && to(edge);
   }
-  function tryDragExit() {
+
+  // Pushing into an edge while a little off the line: ease onto the line so the brick can enter a gap.
+  // This only happens while the brick is blocked; in open space it never aligns itself.
+  function glide(axis, delta) {
+    if (Math.abs(delta) < EPS) return false;
+    const p = axis === 'x' ? drag.fy : drag.fx;
+    const line = Math.round(p), off = line - p;
+    if (Math.abs(off) < EPS || Math.abs(off) > 0.45) return false;
+    const probe = Math.sign(delta) * 0.05;
+    const opens = axis === 'x' ? canPlaceFloat(drag.i, drag.fx + probe, line) : canPlaceFloat(drag.i, line, drag.fy + probe);
+    if (!opens) return false;
+    const step = Math.sign(off) * Math.min(Math.abs(off), DRAG_STEP);
+    return axis === 'x' ? place(drag.fx, drag.fy + step) : place(drag.fx + step, drag.fy);
+  }
+
+  function dragTo(rawX, rawY) {
+    const L = G.L, b = L.blocks[drag.i];
+    let tx = clamp(rawX, 0, L.W - b.w), ty = clamp(rawY, 0, L.H - b.h);
+    if (b.dir === 'h') ty = drag.fy;
+    if (b.dir === 'v') tx = drag.fx;
+    for (let guard = 0; guard < 200; guard++) {
+      const dx = tx - drag.fx, dy = ty - drag.fy, dist = Math.hypot(dx, dy);
+      if (dist < 0.005) break;
+      const k = Math.min(1, DRAG_STEP / dist), step = { x: dx * k, y: dy * k };
+      if (place(drag.fx + step.x, drag.fy + step.y)) continue;
+      // blocked: slide along the main direction, then turn into a gap, then use the other axis
+      const a = Math.abs(step.x) >= Math.abs(step.y) ? 'x' : 'y', o = a === 'x' ? 'y' : 'x';
+      if (slide(a, step[a]) || glide(a, step[a]) || slide(o, step[o]) || glide(o, step[o])) continue;
+      break;
+    }
+    if (Math.abs(drag.fx - drag.sx) > 0.05 || Math.abs(drag.fy - drag.sy) > 0.05) drag.moved = true;
+    tryDragExit(rawX, rawY);
+  }
+
+  // Leave mid-drag when the brick, close to a grid spot touching its door, is pushed out through it.
+  function tryDragExit(rawX, rawY) {
     const i = drag.i, x = Math.round(drag.fx), y = Math.round(drag.fy);
+    if (Math.abs(drag.fx - x) > 0.34 || Math.abs(drag.fy - y) > 0.34) return false;
     const di = Engine.findExit(G.L, G.S, G.occ, i, x, y);
     if (di < 0) return false;
+    const side = Engine.doorAt(G.L, G.S, di).side;
+    const push = { R: rawX - drag.fx, L: drag.fx - rawX, D: rawY - drag.fy, U: drag.fy - rawY }[side];
+    if (push < 0.25) return false;
+    const fx = drag.fx, fy = drag.fy;
     drag = null;
-    doExit(i, x, y, di);
+    doExit(i, x, y, di, fx, fy);
     return true;
+  }
+
+  // Nearest grid spot for a released brick. Rounding stays inside cells it already overlaps, so it fits.
+  function snapTarget(d) {
+    const fl = v => Math.floor(v + EPS), ce = v => Math.ceil(v - EPS);
+    const cands = [[Math.round(d.fx), Math.round(d.fy)], [fl(d.fx), fl(d.fy)], [ce(d.fx), ce(d.fy)], [fl(d.fx), ce(d.fy)], [ce(d.fx), fl(d.fy)]];
+    for (const [x, y] of cands) if (Engine.canPlace(G.L, G.occ, d.i, x, y)) return [x, y];
+    return [d.sx, d.sy];
   }
 
   function releaseDrag() {
     const d = drag;
     drag = null;
     const L = G.L, S = G.S, i = d.i;
-    const rx = Math.round(d.fx), ry = Math.round(d.fy);
+    const [rx, ry] = snapTarget(d);
     if (!d.moved && rx === d.sx && ry === d.sy) {
       // tap: leave if already standing at a matching door
       const di = Engine.findExit(L, S, G.occ, i, rx, ry);
-      if (di >= 0) doExit(i, rx, ry, di);
+      if (di >= 0) doExit(i, rx, ry, di, d.fx, d.fy);
+      else if (d.fx !== rx || d.fy !== ry) snaps.set(i, { fx: d.fx, fy: d.fy, tx: rx, ty: ry, t0: performance.now() });
       return;
     }
+    // dropped right against its door: out it goes
+    const exitDoor = Engine.findExit(L, S, G.occ, i, rx, ry);
+    if (exitDoor >= 0) { doExit(i, rx, ry, exitDoor, d.fx, d.fy); return; }
     snaps.set(i, { fx: d.fx, fy: d.fy, tx: rx, ty: ry, t0: performance.now() });
     if (rx === d.sx && ry === d.sy) return;
     const before = L.doors.map((_, di) => doorRectNow(di));
@@ -758,7 +786,8 @@
 
   function doorRectNow(di) { const d = Engine.doorAt(G.L, G.S, di); const r = doorRect(view, d); return { x: r[0], y: r[1] }; }
 
-  function doExit(i, x, y, di) {
+  // (fx, fy): where the brick is drawn right now, possibly between cells; the exit slide starts there.
+  function doExit(i, x, y, di, fx, fy) {
     const L = G.L, S = G.S;
     const b = L.blocks[i];
     const d = Engine.doorAt(L, S, di);
@@ -773,7 +802,7 @@
       pops.set(i, performance.now());
     } else {
       Sound.play('exit', { rate: 0.95 + Math.random() * 0.12 });
-      exiting.push({ i, x, y, side: d.side, ci: S.ci[i], t0: performance.now(), dur: 260, col, burst: false });
+      exiting.push({ i, x, y, x0: fx === undefined ? x : fx, y0: fy === undefined ? y : fy, side: d.side, ci: S.ci[i], t0: performance.now(), dur: 260, col, burst: false });
     }
     hideHand();
     afterAction(res, before);
@@ -998,7 +1027,9 @@
         roundRect(ctx, v.ox - v.ft * 0.15, v.oy - v.ft * 0.15, L.W * v.cs + v.ft * 0.3, L.H * v.cs + v.ft * 0.3, v.cs * 0.1);
         ctx.clip();
         if (!e.burst && t > 0.35) { e.burst = true; doorBurst(e); }
-        drawGhost(ctx, L, v, e.i, ghost, e.x + dx * k, e.y + dy * k, { scale: 1 - t * 0.15 });
+        const settle = 1 - Math.min(1, t / 0.4); // ease from the drag position onto the door line
+        const bx = e.x + (e.x0 - e.x) * settle, by = e.y + (e.y0 - e.y) * settle;
+        drawGhost(ctx, L, v, e.i, ghost, bx + dx * k, by + dy * k, { scale: 1 - t * 0.15 });
       } else {
         drawGhost(ctx, L, v, e.i, ghost, e.x, e.y - t * 0.4, { scale: 1 + t * 0.3, alpha: 1 - t });
       }
@@ -1012,7 +1043,7 @@
       let x = S.x[i], y = S.y[i];
       const sn = snaps.get(i);
       if (sn) {
-        const t = clamp((now - sn.t0) / 90, 0, 1);
+        const t = clamp((now - sn.t0) / 130, 0, 1);
         x = sn.fx + (sn.tx - sn.fx) * easeOut(t); y = sn.fy + (sn.ty - sn.fy) * easeOut(t);
         if (t >= 1) snaps.delete(i);
       }
@@ -1314,5 +1345,5 @@
   requestAnimationFrame(frame);
 
   // debug hooks (used by automated checks)
-  window.__brick = { startLevel, get G() { return G; }, get view() { return view; }, save, openLevels };
+  window.__brick = { startLevel, get G() { return G; }, get view() { return view; }, get drag() { return drag; }, save, openLevels };
 })();
